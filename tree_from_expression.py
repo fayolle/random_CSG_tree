@@ -1,16 +1,12 @@
 import sys
 import collections
 import tokenize
-import subprocess
 import io # io.StringIO
 
 
 # TODO
 # * function names: construct_tree, build_tree are not good; they don't describe 
 # what these functions do
-# * eventually I could turn this into a library and have the main program 
-# access it directly instead of creating intermediate files between this, 
-# the gp, the segmentation and use these intermediate files for the communication
 #
 
 
