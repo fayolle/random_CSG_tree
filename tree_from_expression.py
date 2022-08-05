@@ -1,9 +1,17 @@
 import sys
 import collections
-import cStringIO
 import tokenize
 import subprocess
-import StringIO
+import io # io.StringIO
+
+
+# TODO
+# * function names: construct_tree, build_tree are not good; they don't describe 
+# what these functions do
+# * eventually I could turn this into a library and have the main program 
+# access it directly instead of creating intermediate files between this, 
+# the gp, the segmentation and use these intermediate files for the communication
+#
 
 
 # parse() needs a list of operations (OPERATIONS) and primitives (PRIMITIVES) 
@@ -14,8 +22,7 @@ import StringIO
 
 UNARY_OPERATIONS = ['negation']
 BINARY_OPERATIONS = ['union', 'intersection', 'subtraction']
-#OPERATIONS = ['union', 'intersection', 'subtraction', 'negation']
-OPERATIONS = BINARY_OPERATIONS + UNARY_OPERATIONS
+OPERATIONS = ['union', 'intersection', 'subtraction', 'negation']
 
 PRIMITIVES = []
 
@@ -49,24 +56,24 @@ def read_expression_from_file(filename):
 def construct_tree(expression):
     # Given the expression as a string, construct a parse tree corresponding to 
     # a pre-order traversal of the tree corresponding to the expression
-    src = cStringIO.StringIO(expression).readline
+    src = io.StringIO(expression).readline
     src = tokenize.generate_tokens(src)
-
+    
     # Tree as a list of symbols corresponding to a prefix order traversal of 
     # the tree
     tree = []
-    tree = parse(src.next)
+    tree = parse(src)
 
     return tree
 
 
-def parse(next_it):
+def parse(token_src):
     '''
     Given an iterator to a list of tokens, returns a list of operations and 
     primitives.
     '''
     expression = []
-    token = next_it()
+    token = next(token_src)
 
     while token[1]:
         
@@ -77,7 +84,7 @@ def parse(next_it):
             label = token[1]
             expression.append(label)
 
-        token = next_it()
+        token = next(token_src)
 
     return expression
 
@@ -123,13 +130,11 @@ def build_tree(prefix):
         return Node(g_operation_count, label, build_tree(prefix), build_tree(prefix))
 
 
-def save_tree_to_figure(tree, figure_filename):
-    p = subprocess.Popen(["dot", "-Tpng", "-o"+figure_filename], stdin=subprocess.PIPE)
+def save_tree_to_file(tree, figure_filename):
     tree_string = binary_tree_to_dot_string(tree)
-    p.stdin.write(tree_string)
-    p.stdin.close()
-    if p.wait() != 0:
-        raise RuntimeError("Unexpected error in save_tree_to_figure.")
+    f = open(figure_filename, 'w')
+    f.write(tree_string)
+    f.close()
 
 
 def binary_tree_to_dot_string(tree):
@@ -137,7 +142,7 @@ def binary_tree_to_dot_string(tree):
     Generate a string using the graphviz syntax that describes the tree passed
     as argument.
     '''
-    stream = StringIO.StringIO()
+    stream = io.StringIO()
     binary_tree_to_dot(tree, stream)
     return stream.getvalue()
 
@@ -150,20 +155,21 @@ def escape(text):
 def binary_tree_to_dot(tree, stream):
     style = 'fontname="Arial"'
 
-    print >>stream, "digraph BST {"
+    print("digraph BST {", file=stream)
     # See http://stackoverflow.com/questions/9215803/graphviz-binary-tree-left-and-right-child
-    print >>stream, ' graph [ordering="out"];'
-    print >>stream, "    node [%s];" % style
+    print(' graph [ordering="out"];', file=stream)
+    print("    node [%s];" % style,  file=stream) 
 
     if tree is None:
-        print >>stream
+        # print >>stream
+        pass
     elif tree.left is None and tree.right is None:
-        print >>stream, "     %s [label=%s];" % (escape(tree.key), escape(tree.label))
-        print >>stream, "     %s;" % escape(tree.key)
+        print("     %s [label=%s];" % (escape(tree.key), escape(tree.label)), file=stream)
+        print("     %s;" % escape(tree.key), file=stream)
     else:
         node_to_dot(tree, stream)
 
-    print >>stream, "}"
+    print("}", file=stream)
 
 
 # In order to have different nodes with the same label, see:
@@ -171,15 +177,15 @@ def binary_tree_to_dot(tree, stream):
 def node_to_dot(node, stream):
     # recursively print the nodes
     if node.left is not None:
-        print >>stream, "    %s [label=%s];" % (escape(node.key), escape(node.label))
-        print >>stream, "    %s [label=%s];" % (escape((node.left).key), escape((node.left).label))
-        print >>stream, "    %s -> %s;" % (escape(node.key), escape((node.left).key))
+        print("    %s [label=%s];" % (escape(node.key), escape(node.label)), file=stream)
+        print("    %s [label=%s];" % (escape((node.left).key), escape((node.left).label)), file=stream)
+        print("    %s -> %s;" % (escape(node.key), escape((node.left).key)), file=stream)
         node_to_dot(node.left, stream)
 
     if node.right is not None:
-        print >>stream, "    %s [label=%s];" % (escape(node.key), escape(node.label))
-        print >>stream, "    %s [label=%s];" % (escape((node.right).key), escape((node.right).label))
-        print >>stream, "     %s -> %s;" % (escape(node.key), escape((node.right).key))
+        print("    %s [label=%s];" % (escape(node.key), escape(node.label)), file=stream)
+        print("    %s [label=%s];" % (escape((node.right).key), escape((node.right).label)), file=stream)
+        print("     %s -> %s;" % (escape(node.key), escape((node.right).key)), file=stream)
         node_to_dot(node.right, stream)
 
 
@@ -189,7 +195,7 @@ def main():
         primitives_list_filename = sys.argv[2]
         figure_filename = sys.argv[3]
     except IndexError:
-        sys.exit("Usage: %s expression_file.txt primitives_list.txt figure_file.png\n" % (sys.argv[0]))
+        sys.exit("Usage: %s expression_file.txt primitives_list.txt figure_file.dot\n" % (sys.argv[0]))
 
     # Read the expression as a string
     expression = read_expression_from_file(expression_filename)
@@ -197,7 +203,7 @@ def main():
     # Build the list of primitives
     global PRIMITIVES
     PRIMITIVES = read_primitives_list(primitives_list_filename)
-
+    
     # Transform the expression in a pre-order traversal of the tree
     tree_preorder = construct_tree(expression)
     number_operations = count_operations(tree_preorder)
@@ -206,7 +212,7 @@ def main():
 
     # Construct a tree from the pre-order traversal
     tree = build_tree(collections.deque(tree_preorder))
-    save_tree_to_figure(tree, figure_filename)
+    save_tree_to_file(tree, figure_filename)
 
 
 if __name__ == "__main__":
